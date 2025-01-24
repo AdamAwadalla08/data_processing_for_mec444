@@ -1,0 +1,9 @@
+.venv
+steps.txt
+__pycache__
+*.txt
+!requires.txt
+.vscode
+Eigen
+Raw_Data_Universal_Files
+temp_debugging_files
