@@ -1,4 +1,4 @@
-# Repository for Data analysis of Tap Test of Girder Stiffening Array
+# Repository for Data Analysis of impact test performed on bridge girder stiffening array
 ## :round_pushpin: School of Mechanical, Aerospace, and Civil Engineering at The University of Sheffield
 >### Author: _Adam Awadalla_
 > #### Done as part of MEC444 - Industrial Experimental Methods for Engineering Problems - Course.
