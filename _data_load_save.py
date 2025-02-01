@@ -1,5 +1,5 @@
 """
-DO NOT RUN UNNECESSARILY!!!
+DO NOT RUN UNNECESSARILY!!! IT IS VERY SLOW
 
 Saves all data to numpy z-compressed files (.npz)
 
