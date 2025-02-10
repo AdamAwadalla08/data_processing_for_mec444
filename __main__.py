@@ -22,7 +22,7 @@ import time
 
 """
 
-FIXTURE_MIMO_SYSTEM = np.load('MIMO.npz')
+FIXTURE_MIMO_SYSTEM = np.load('fixed_data/MIMO.npz')
 delta_t = FIXTURE_MIMO_SYSTEM['t'][1]-FIXTURE_MIMO_SYSTEM['t'][0]
 freqs = FIXTURE_MIMO_SYSTEM['ws']
 frf = FIXTURE_MIMO_SYSTEM['H']
@@ -34,8 +34,8 @@ def polymax_test(frf,freqs,delta_t,order):
 
     X,Y = ma.make_X_and_Y(polybasis,weighting,frf)
     R,S,T=ma.make_RST_optimized(X,Y)
-    M = ma.M_MATRIX(R,S,T)
-    alpha = ma.LSQ_ALPHA(M,2)
+    M = ma.make_M_matrix(R,S,T)
+    alpha = ma.make_LSQ_alpha(M,2)
     compmat = ma.make_companion_Matrix(alpha,2)
     poles,_ = ma.make_time_poles_and_participation_factors(compmat)
     poles = ma.basic_stability(poles)
@@ -62,7 +62,7 @@ for i in range(1,30):
         ax2.scatter(wn,np.tile(i,len(wn)))
     except np.linalg.LinAlgError: continue
 
-ax2.vlines(FIXTURE_MIMO_SYSTEM['wn'],0,20,linestyles='-.',colors='black')
+ax2.vlines(FIXTURE_MIMO_SYSTEM['wn'],0,30,linestyles='-.',colors='black')
 plt.xlim(0,freqs[-1]*2*np.pi)
 plt.show()
 

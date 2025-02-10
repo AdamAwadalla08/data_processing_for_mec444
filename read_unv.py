@@ -3,23 +3,23 @@ import sys
 import subprocess
 from typing import NamedTuple
 
-# installs venv for examiner who might've not used python previously
+# # installs venv for examiner who might've not used python previously
 
-def setup_venv():
-    if not os.path.exists('.venv'):
-        subprocess.check_call([sys.executable,'-m','venv','.venv'])
-    else:
-        print("Virtual environment exists")
+# def setup_venv():
+#     if not os.path.exists('.venv'):
+#         subprocess.check_call([sys.executable,'-m','venv','.venv'])
+#     else:
+#         print("Virtual environment exists")
     
-    activate_bat = os.path.join('.venv','Scripts','activate.bat')
-    if not os.path.exists(activate_bat):
-        sys.exit(1)
-        print("pls check you cloned repo correctly")
+#     activate_bat = os.path.join('.venv','Scripts','activate.bat')
+#     if not os.path.exists(activate_bat):
+#         sys.exit(1)
+#         print("pls check you cloned repo correctly")
 
-    required_libs = 'required.txt'
-    if not os.path.exists(required_libs):
-        sys.exit(1)
-        print("pls check you cloned repo correctly")
+#     required_libs = 'required.txt'
+#     if not os.path.exists(required_libs):
+#         sys.exit(1)
+#         print("pls check you cloned repo correctly")
 
     
 

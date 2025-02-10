@@ -29,6 +29,6 @@ def MAC_matrix(eigenmatrix1:np.ndarray,eigenmatrix2:np.ndarray=None):
 
     return MAC
 
-modeshapes_2dof_easy = np.array([[1.,1.],[1.,-1.]])
+# modeshapes_2dof_easy = np.array([[1.,1.],[1.,-1.]])
 
-print(MAC_matrix(modeshapes_2dof_easy))
+# print(MAC_matrix(modeshapes_2dof_easy))

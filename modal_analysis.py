@@ -1,9 +1,8 @@
 import numpy as np
 import read_unv as ru
 import time
-import math
 import utils
-pi = math.pi
+
 
 def make_polynomial_basis_fcn(polynomial_order : int, frequency_vector : np.ndarray,sampling_frequency:float=None, sampling_rate:float=None):
     """Function that creates a Polynomial Basis Function matrix
@@ -38,53 +37,80 @@ def make_polynomial_basis_fcn(polynomial_order : int, frequency_vector : np.ndar
     #   multiply by j
     p_matrix = (np.dot(np.diag(freq),p_matrix))*dt*1j
     #   exp of that matrix to give Omega
-    return np.exp(p_matrix)
+    return np.exp(-1*p_matrix)
 
 
 def frequency_dependent_weighting(MIMO_transfer_function: np.ndarray):
+    """frequency_dependent_weighting: physically speaking, this function is a frequency-domain function, which gives higher 
+    weight in the least-squres estimate to the less variant parts of each output.
+
+    from [insert paper reference]:
+    W_output = 1/sqrt(var(H_output)) or = 1/std(H_output)
+    the variance for each output at a given frequency bin for all inputs is calculated and inverted.
+
+    Args:
+        MIMO_transfer_function (np.ndarray): Multi-Input-Multi-Output Transfer function, generally should be N_outputs x N_inputs x Freq_Bins
+
+
+    Returns:
+        np.ndarray of weighting calculated weighting function.
+    """
     # Assuming FRF matrix is N_out x N_out x N_freq
-    init_shape = np.shape(MIMO_transfer_function)
-    N_f = init_shape[2]
-    N_in = init_shape[1]
-    N_out = init_shape[0]
+
 
     reshaped_mimo_tf = np.transpose(MIMO_transfer_function, (0,2,1)) # This makes it into N_out x N_f x N_in
-    variance_matrix = np.std(reshaped_mimo_tf,axis=2).T #Makes the variance
+    variance_matrix = np.var(reshaped_mimo_tf,axis=2,ddof=1).T # Makes the variance
 
-    return 1 / variance_matrix
+    return 1 / np.sqrt(variance_matrix)
     
 
 
 def make_X_and_Y(polynomial_basis_function: np.ndarray, weighting_function: np.ndarray,MIMO_FRF: np.ndarray):
+    """ Function to calculate X and Y tensors.
+    X is Freq_bins x (polynomial_order+1) x N_output
+    Y is Freq_bins x N_input*(polynomialorder+1) x N_output
 
+    [insert Peeters Paper + Brandon Review as reference, and insert equation numbers as well cuz you can't put them in here]
+
+    Args:
+        polynomial_basis_function (np.ndarray): Output of function: make_polynomial_basis_fcn
+        weighting_function (np.ndarray): Output of function: frequency_dependent_weighting
+        MIMO_FRF (np.ndarray): Multi-Input-Multi-Output Frequency Response Function.
+
+    Returns:
+        Tuple (X,Y) calculated.
+    """
 
 
 # X calculation: 
 
-    broadcasted_w = weighting_function[:,np.newaxis,:]
+# Array broascasting as is needed for calculation, as each have only 1 shared dimension, and X has the dimensions from both.
+    broadcasted_w = weighting_function[:,np.newaxis,:]  
     broadcasted_polybasisfcn = polynomial_basis_function[:,:,np.newaxis]
 
     X = broadcasted_polybasisfcn*broadcasted_w
 
 # Y calculation:
 
-
-    # dims= np.shape(MIMO_FRF)
     N_out = MIMO_FRF.shape[0]
     N_in = MIMO_FRF.shape[1]
     N_f = MIMO_FRF.shape[2]
-    poly_order = np.shape(polynomial_basis_function)[1]
+    poly_order = np.shape(polynomial_basis_function)[1] #   *** not accurate, it's p+1 not just p
 
     Y = np.zeros((N_f,N_in*poly_order,N_out)).astype(np.complex128)
 
+    # Reshaping the FRF to a dimension easier to work with for this specific calculation
     reshape_frf_for_kronecker = np.transpose(MIMO_FRF,(2,1,0)) # becomes N_f x N_in x N_out
 
     initial_product = []
+    # From the paper, 2 things multiplied, then kronecker product with the FRF basically
     for i in range(N_out):
         temp_var = -weighting_function[:,i][:,np.newaxis]*polynomial_basis_function
         initial_product.append(temp_var)
 
     initial_product = np.transpose(initial_product,(1,2,0))
+
+    #does kronecker product
 
     for i in range(0,N_out):
         for j in range(0,N_f):
@@ -97,56 +123,34 @@ def make_X_and_Y(polynomial_basis_function: np.ndarray, weighting_function: np.n
 
 
 
-
-# class hermit(np.ndarray):
-#     @property
-#     def H(self):
-#         return self.conj().T
-
-
-
-
-# def make_R_S_T(X:np.ndarray,Y:np.ndarray):
-#     X = X.view(hermit)
-#     Y = Y.view(hermit)
-
-
-#     N_f = X.shape[0]
-#     poly_order = X.shape[1]
-#     N_out = X.shape[2]
-
-#     N_in = int(Y.shape[1]/X.shape[1])
-
-#     R = np.zeros((poly_order,poly_order,N_out))
-
-#     S = np.zeros((poly_order,N_in*poly_order,N_out))
-
-#     T = np.zeros((N_in*poly_order,N_in*poly_order,N_out))
-
-#     for i in range(N_out):
-
-#         R[:,:,i] = np.real(X[:,:,i].H @ X[:,:,i])
-
-#         S[:,:,i] = np.real(X[:,:,i].H @ Y[:,:,i])
-
-#         T[:,:,i] = np.real(Y[:,:,i].H @ Y[:,:,i])
-
-#     return R, S, T
-
-
 def make_RST_optimized(X,Y):
+    """Makes R, S, and T tensors for least-squares estimate (probably most cruicial function for least squares estimate)
 
-    XH = np.transpose(X.conj(),(1,0,2))
+    R and T, are the hermitian gram matrices, (Gram Matrix with Complex Conjugation), of X and Y respectively. 
+    While S, is the hermitian gram matrix of Y and X together
+    [ref papers again]
+
+    Args:
+        X (Tensor, np.ndarray): Outputs from make_X_and_Y
+        Y (Tensor, np.ndarray): ~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Returns:
+        tuple: R,S,T matrices
+    """
+    XH = np.transpose(X.conj(),(1,0,2)) # Transposes without touching the output dimension and does complex conjugation
     YH = np.transpose(Y.conj(),(1,0,2))
 
-    p = X.shape[1]
-    N_out = X.shape[2]
-    N_in = Y.shape[1] // p
+    p = X.shape[1] # Technically is p+1 but just for the sake of matrix shape.
+    N_out = X.shape[2] # Test should assert that N_out is same for X and Y, but probably is.
+    N_in = Y.shape[1] // p # Y is freq_bins x N_in x(p+1)xN_ouput
 
+    # Supposedly a real number
 
     R = np.zeros((p, p, N_out), dtype=np.float64)
     S = np.zeros((p, N_in*p, N_out), dtype=np.float64)
     T = np.zeros((N_in*p, N_in*p, N_out), dtype=np.float64)
+
+    # Memory optimized calculation, uses numpy.dot, which uses BLAS compiled in C. same as using @
 
     for i in range(N_out):
         R[:,:,i] = np.real(np.dot(XH[:,:,i],X[:,:,i]))
@@ -156,9 +160,24 @@ def make_RST_optimized(X,Y):
     return R, S, T
 
 
+# I think the errors start here.
 
-def M_MATRIX(R:np.ndarray,S:np.ndarray,T:np.ndarray):
-    
+def make_M_matrix(R:np.ndarray,S:np.ndarray,T:np.ndarray):
+    """Makes M matrix, which is the result of minimizing the linearized least squres cost function.
+    [ref paper]
+
+    the matrix M is defined as the sum of all the slices of this value:
+
+    (T + S^T R^-1 S)_output. where the slices are the corresponding output.
+
+    Args:
+        R (np.ndarray): shape (p+1) x (p+1) x N_outputs
+        S (np.ndarray): shape (p+1) x N_inputs *(p+1) x N_outputs
+        T (np.ndarray):  N_inputs * (p+1) x N_inputs *(p+1) x N_outputs
+
+    Returns:
+       M matrix
+    """
     N_out =R.shape[-1]
     M = np.zeros((T.shape[0],T.shape[1]))
 
@@ -172,8 +191,16 @@ def M_MATRIX(R:np.ndarray,S:np.ndarray,T:np.ndarray):
 
 
 
-def LSQ_ALPHA(M: np.ndarray, N_in: int):
-    
+def make_LSQ_alpha(M: np.ndarray, N_in: int):
+    """Makes the least squares estimate of alpha
+
+    Args:
+        M (np.ndarray): Output of make_M_matrix
+        N_in (int): number of inputs (forces) into the system.
+
+    Returns:
+        _type_: _description_
+    """
     polynomial_order = M.shape[0] // N_in 
 
     alpha = np.zeros((N_in * (polynomial_order), N_in))
@@ -181,7 +208,7 @@ def LSQ_ALPHA(M: np.ndarray, N_in: int):
     alpha[-N_in:, :] = np.eye(N_in)
 
     
-    M_lhs = M[0:N_in * (polynomial_order - 1), 0:N_in * (polynomial_order - 1)]
+    M_lhs = M[0:N_in * (polynomial_order - 1), 0: N_in * (polynomial_order - 1)]
     M_rhs = M[0:N_in * (polynomial_order - 1), N_in * (polynomial_order - 1):N_in * polynomial_order]
 
     # alpha[:-N_in, :] = np.linalg.solve(M_lhs, M_rhs)
@@ -193,14 +220,13 @@ def LSQ_ALPHA(M: np.ndarray, N_in: int):
 
 
 
-def LSQ_BETA(alpha,R,S):
+def make_LSQ_beta(alpha,R,S):
 
     N_out = R.shape[-1]
     N_in = alpha.shape[-1]
     polynomial_order = alpha.shape[0]//N_in
 
     beta = np.zeros((polynomial_order,N_in,N_out))
-
     for i in range(N_out):
         beta[:,:,i] = -np.linalg.inv(R[:,:,i]) @ S[:,:,i] @ alpha
 
@@ -252,36 +278,6 @@ def unphysical_mode_filer(poles):
     _,zn = poles_to_modal(poles)
     
     return poles[zn >=0 ]
-# Healthy_Data = ru.format_state("full_tests_new.unv","Healthy State",4104,16384)
-
-# fs = (Healthy_Data.freqs[1]-Healthy_Data.freqs[0]) * (len(Healthy_Data.freqs)-2)*2
-
-# frf = Healthy_Data.FRF[:,:,0:-2]
-
-
-# polybasistest =  make_polynomial_basis_fcn(20,Healthy_Data.freqs,sampling_frequency=fs)
-
-# polybasistest = polybasistest[0:-2]
-
-# w =  frequency_dependent_weighting(frf)
-
-# X,Y =  make_X_and_Y(polynomial_basis_function=polybasistest,weighting_function=w,MIMO_FRF=frf)
-
-# # print(X.shape)
-# # print(Y.shape)
-
-
-# R,S,T =  make_R_S_T(X,Y)
-# # print(R.shape)
-# # print(S.shape)
-# # print(T.shape)
-    
-# M =  M_MATRIX(R,S,T)
-
-
-# alpha =  LSQ_ALPHA(M,12)
-
-# beta =  LSQ_BETA(alpha,R,S)
 
 
 def make_polynomial_FRF(alpha,beta,polynomial_basis):
@@ -312,24 +308,14 @@ def make_polynomial_FRF(alpha,beta,polynomial_basis):
     
     H = np.zeros((N_out,N_in,N_f))
 
-    
+    for i in range(poly_order):
+        A+= polynomial_basis[:]
     pass
 
-# comp_mat =  make_companion_Matrix(alpha,12)
-# # print(comp_mat)
-
-
-
-# test1,test2 = make_time_poles_and_participation_factors(comp_mat)
-
-# # print(test1.shape)
-# # print(test2.shape)
-
-# wn,zeta = poles_to_modal(test1)
-
-# print(wn)
-# print(zeta)
-
+def pLSCF_poles_to_modal(eigenvalues):
+    eigenvalues2 = basic_stability(eigenvalues)
+    eigenvalues3 = unphysical_mode_filer(eigenvalues2)
+    return poles_to_modal(eigenvalues3)
 
 
 
@@ -342,20 +328,20 @@ def plscf_bootleg(model_order: int, data: dict):
 
     samp_freq = 8192
 
-    poly_basis = make_polynomial_basis_fcn(model_order, data["freqs"][2:2050], sampling_frequency=samp_freq)
+    poly_basis = make_polynomial_basis_fcn(model_order, data["freqs"][:-2], sampling_frequency=samp_freq)
 
-    weighting_fn = frequency_dependent_weighting(mimo_normed_psds[:, :, 2:2050])
+    weighting_fn = frequency_dependent_weighting(mimo_normed_psds[:, :, :-2])
     # weighting_fn = np.ones(weighting_fn.shape,np.float64)
 
-    X, Y = make_X_and_Y(poly_basis, weighting_fn, mimo_normed_psds[:, :,2:2050])
+    X, Y = make_X_and_Y(poly_basis, weighting_fn, mimo_normed_psds[:, :,:-2])
 
     R, S, T = make_RST_optimized(X, Y)
 
-    M = M_MATRIX(R, S, T)
+    M = make_M_matrix(R, S, T)
 
-    alpha = LSQ_ALPHA(M, 12)
+    alpha = make_LSQ_alpha(M, 12)
 
-    beta = LSQ_BETA(alpha, R, S)
+    beta = make_LSQ_beta(alpha, R, S)
 
     companion = make_companion_Matrix(alpha, 12)
 
@@ -383,20 +369,16 @@ def plscf_bootleg_plus_timing(model_order: int, data: dict):
     X, Y = make_X_and_Y(poly_basis, weighting_fn, data["FRF"][:, :, 2:2050])
     time4 = time.time()
 
-    # p = model_order+1
-    # N_out = data["FRF"].shape[0]
-    # N_in = data["FRF"].shape[1]
-
     R, S, T = make_RST_optimized(X,Y)
     time5 = time.time()
 
-    M = M_MATRIX(R, S, T)
+    M = make_M_matrix(R, S, T)
     time6 = time.time()
 
-    alpha = LSQ_ALPHA(M, 12)
+    alpha = make_LSQ_alpha(M, 12)
     time7 = time.time()
 
-    beta = LSQ_BETA(alpha, R, S)
+    beta = make_LSQ_beta(alpha, R, S)
     time8 = time.time()
 
     companion = make_companion_Matrix(alpha, 12)
@@ -426,11 +408,6 @@ def plscf_bootleg_plus_timing(model_order: int, data: dict):
 
 
 
-# a,b,c = plscf_bootleg(20,data=Healthy_Data)
-
-# print(a)
-# print(b)
-# #   bismillah 
 
 
 
@@ -516,3 +493,56 @@ def plscf_bootleg_plus_timing(model_order: int, data: dict):
 #         file.write("\n")
 
 
+# Healthy_Data = ru.format_state("full_tests_new.unv","Healthy State",4104,16384)
+
+# fs = (Healthy_Data.freqs[1]-Healthy_Data.freqs[0]) * (len(Healthy_Data.freqs)-2)*2
+
+# frf = Healthy_Data.FRF[:,:,0:-2]
+
+
+# polybasistest =  make_polynomial_basis_fcn(20,Healthy_Data.freqs,sampling_frequency=fs)
+
+# polybasistest = polybasistest[0:-2]
+
+# w =  frequency_dependent_weighting(frf)
+
+# X,Y =  make_X_and_Y(polynomial_basis_function=polybasistest,weighting_function=w,MIMO_FRF=frf)
+
+# # print(X.shape)
+# # print(Y.shape)
+
+
+# R,S,T =  make_R_S_T(X,Y)
+# # print(R.shape)
+# # print(S.shape)
+# # print(T.shape)
+    
+# M =  M_MATRIX(R,S,T)
+
+
+# alpha =  make_LSQ_alpha(M,12)
+
+# beta =  make_LSQ_beta(alpha,R,S)
+
+
+# comp_mat =  make_companion_Matrix(alpha,12)
+# # print(comp_mat)
+
+
+
+# test1,test2 = make_time_poles_and_participation_factors(comp_mat)
+
+# # print(test1.shape)
+# # print(test2.shape)
+
+# wn,zeta = poles_to_modal(test1)
+
+# print(wn)
+# print(zeta)
+
+
+# a,b,c = plscf_bootleg(20,data=Healthy_Data)
+
+# print(a)
+# print(b)
+# #   bismillah 
