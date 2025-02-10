@@ -22,7 +22,8 @@ import numpy as np
 import modal_analysis as ma
 import matplotlib.pyplot as plt
 from utils import *
-order = 120
+
+order = 10
 
 testdata = np.load('fixed_data/MIMO.npz')
 delta_t = testdata['t'][1]-testdata['t'][0]

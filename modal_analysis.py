@@ -195,8 +195,8 @@ def make_LSQ_alpha(M: np.ndarray, N_in: int):
     """Makes the least squares estimate of alpha
 
     Args:
-        M (np.ndarray): _description_
-        N_in (int): _description_
+        M (np.ndarray): Output of make_M_matrix
+        N_in (int): number of inputs (forces) into the system.
 
     Returns:
         _type_: _description_
